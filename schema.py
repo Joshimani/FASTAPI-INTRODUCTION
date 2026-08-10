@@ -1,4 +1,13 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
+
+class SignUp(BaseModel):
+    full_name: str
+    username: str
+    email: EmailStr
+    password: str
+    confirm_password: str
+
+
 class ProductCreate(BaseModel):
     name: str
     price: float
