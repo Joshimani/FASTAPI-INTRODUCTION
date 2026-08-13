@@ -6,4 +6,3 @@ bcrypt
 pyjwt
 pydantic[email]
 uuid
-pd

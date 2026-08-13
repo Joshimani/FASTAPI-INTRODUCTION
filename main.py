@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException
-from schema import ProductCreate, ProductResponse, SignUp
+from schema import ProductCreate, ProductResponse, SignUp, Login
 from model import Product, User
 from database import get_db, Base, engine
 from sqlalchemy.orm import Session
 from utils import hash_password, verify_password
+from auth import create_access_token
 
 app = FastAPI()
 Base.metadata.create_all(bind=engine)
@@ -40,6 +41,29 @@ def register(request: SignUp, db: Session = Depends(get_db)):
         "message": "Successfully created an account",
         "id": user.userId 
     }
+
+@app.post("/login")
+def login(request: Login, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found!"
+        )
+    if not verify_password(request.password, user.password):
+        raise HTTPException(
+            status_code=401, 
+            detail="Incorrect email or password"
+        )
+
+    create_token = create_access_token(
+        user.userId
+    )
+
+    return {
+        "message": "Login Sucessful",
+        "token": create_token
+        }
 
 
 @app.get("/product/{id}", response_model=list[ProductResponse])

@@ -7,6 +7,10 @@ class SignUp(BaseModel):
     password: str
     confirm_password: str
 
+class Login(BaseModel):
+    email: EmailStr
+    password: str
+
 
 class ProductCreate(BaseModel):
     name: str
