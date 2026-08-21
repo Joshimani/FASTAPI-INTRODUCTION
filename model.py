@@ -2,14 +2,20 @@ from sqlalchemy import String, Float, Integer, Column
 from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 import uuid
+from enum import Enum
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    USER = "user"
 
 class User(Base):
-    __tablename__="username"
+    __tablename__="user"
 
     userId: Mapped[str] = mapped_column(String, primary_key=True, unique=True, default=lambda : str(uuid.uuid4()))
     full_name = Column(String, nullable=False)
-    username = Column(String, nullable=False)
-    email = Column(String, nullable=False, primary_key=True)
+    username = Column(String, nullable=False, unique=True)
+    role = Column(String, default=lambda : str("user"))
+    email = Column(String, nullable=False, unique=True)
     password: Mapped[str] = mapped_column(String, nullable=False)
     
 

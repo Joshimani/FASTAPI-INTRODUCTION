@@ -2,3 +2,4 @@
 venv
 product.db
 __pycache__
+alembic 
