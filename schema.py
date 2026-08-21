@@ -27,3 +27,13 @@ class ProductCreate(BaseModel):
 
 class ProductResponse(ProductCreate):
     id: int
+
+class CartItem(BaseModel):
+    id: int
+    qty: int
+
+class Cart(BaseModel):
+    name: str
+    id: int
+    price: float
+    qty: int 
