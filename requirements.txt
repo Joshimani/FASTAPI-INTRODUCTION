@@ -5,7 +5,6 @@ passlib
 bcrypt
 pyjwt
 pydantic[email]
-uuid
 alembic
 paybridge
 httpx 
