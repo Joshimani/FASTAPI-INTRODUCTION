@@ -12,10 +12,10 @@ app = FastAPI()
 
 @app.post("/signup")
 def register(request: SignUp, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == request.email).first():
+    if db.query(User).filter(User.email == request.email, User.username == request.username).first():
         raise HTTPException( #change return to raise
             status_code=409,
-            detail="Email already exist"
+            detail="Email or username already exist"
 
         )
     if request.password != request.confirm_password:

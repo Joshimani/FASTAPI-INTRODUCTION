@@ -21,7 +21,7 @@ class User(Base):
     userId: Mapped[str] = mapped_column(String, primary_key=True, unique=True, default=lambda : str(uuid.uuid4()))
     full_name = Column(String, nullable=False)
     username = Column(String, nullable=False, unique=True)
-    role = Column(String, default=lambda : str("admin"))
+    role = Column(String, default=lambda : str("user"))
     email = Column(String, nullable=False, unique=True)
     password: Mapped[str] = mapped_column(String, nullable=False)
     cart = relationship("Cart", back_populates="user", cascade="all, delete-orphan")

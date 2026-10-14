@@ -1,5 +1,28 @@
+# Environment files
 .env
-venv
+.env.*
+
+# Virtual environment
+.venv/
+venv/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local database files
+*.db
 product.db
-__pycache__
-alembic 
+
+# IDE/editor files
+.vscode/
+.idea/
+.DS_Store
+
+# Alembic migration files should stay tracked
+# do not ignore the alembic/ directory here

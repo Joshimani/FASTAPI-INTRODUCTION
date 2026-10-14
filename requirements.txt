@@ -9,3 +9,6 @@ uuid
 alembic
 paybridge
 httpx 
+python-dotenv
+psycopg
+python-multipart 
