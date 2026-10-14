@@ -1,0 +1,334 @@
+# Store API — Frontend Integration Guide
+
+This guide describes the API as it is currently implemented in this repository. It is intended to help a frontend engineer build against the existing FastAPI service and to call out behavior that should be confirmed or corrected before relying on it.
+
+## 1. What the service provides
+
+The application is a small store backend with:
+
+- Account registration, login, current-user details, and password-reset token endpoints.
+- Public product listing and product lookup, plus admin-only product management.
+- Per-user shopping carts.
+- Checkout that creates orders and initializes a Paystack payment.
+
+The API is implemented in `main.py`; request/response schemas are in `schema.py`; SQLAlchemy models are in `model.py`. There is no frontend, API version prefix, pagination, refresh-token endpoint, logout endpoint, or payment callback/verification endpoint implemented in the routes listed below.
+
+## 2. Base URL and HTTP conventions
+
+Configure the deployed API origin in the frontend environment, for example:
+
+```text
+VITE_API_BASE_URL=https://<your-deployed-api-host>
+```
+
+Use the equivalent environment-variable convention for your frontend framework. Do not include a trailing slash if your API client joins paths automatically. Locally, the usual development command is:
+
+```bash
+uvicorn main:app --reload
+```
+
+The local API is then normally available at `http://127.0.0.1:8000`. FastAPI's interactive documentation and OpenAPI schema are normally available at `/docs` and `/openapi.json` on the API origin.
+
+Requests and responses use JSON unless noted. Paths are case-sensitive: `/product/...` and `/Product/...` are distinct paths. There is currently no CORS configuration in `main.py`; a browser frontend served from a different origin needs the backend to allow that origin (or a same-origin development/reverse proxy).
+
+## 3. Authentication
+
+Protected requests use a bearer access token:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+The token is a JWT with a 30-minute expiration. The API does not currently expose a refresh or logout operation. The frontend should handle expiration and require the user to sign in again. Avoid putting tokens in URLs or logging them; choose token storage according to the security requirements of the frontend and deployment.
+
+There are two sign-in endpoints with different request and response formats:
+
+1. `POST /login` accepts JSON and returns the token under `token`.
+2. `POST /token` accepts OAuth2 form data and returns it under `access_token`, with `token_type: "bearer"`.
+
+Both tokens are bearer tokens for subsequent protected calls. The OAuth2 `username` field sent to `/token` is treated as the user's **email address**, not their account username.
+
+## 4. Data shapes
+
+### Account
+
+Registration JSON (`SignUp`):
+
+```json
+{
+  "full_name": "Taylor Example",
+  "username": "taylor",
+  "email": "taylor@example.com",
+  "password": "example-password",
+  "confirm_password": "example-password"
+}
+```
+
+Login JSON (`Login`):
+
+```json
+{
+  "email": "taylor@example.com",
+  "password": "example-password"
+}
+```
+
+The user-facing response from `GET /me` and `GET /admin/dashboard` is:
+
+```json
+{
+  "userId": "user-id",
+  "name": "Taylor Example",
+  "email": "taylor@example.com",
+  "role": "user"
+}
+```
+
+Roles currently used by the backend are `user` and `admin`.
+
+### Product
+
+Create-product request and product response fields:
+
+```json
+{
+  "name": "Example item",
+  "price": 25.5,
+  "stock": 12,
+  "description": "Product description"
+}
+```
+
+A product response also includes an integer `id`:
+
+```json
+{
+  "id": 1,
+  "name": "Example item",
+  "price": 25.5,
+  "stock": 12,
+  "description": "Product description"
+}
+```
+
+Prices are represented as numeric values. Checkout multiplies price by quantity, then converts the total to the smallest currency unit when calling Paystack. The stored order currency defaults to `NGN`.
+
+### Cart
+
+Cart mutation request (`CartItem`):
+
+```json
+{
+  "product_id": 1,
+  "qty": 2
+}
+```
+
+The cart-list response (`CartResponse`) has these fields:
+
+```json
+{
+  "id": 7,
+  "user_id": "user-id",
+  "product_id": 1,
+  "quantity": 2,
+  "product_name": "Example item",
+  "product_price": 25.5,
+  "created_at": "2026-10-14T10:00:00Z"
+}
+```
+
+### Shipping address
+
+`POST /order` requires a `CheckoutAddress` JSON body:
+
+```json
+{
+  "full_name": "Taylor Example",
+  "phone": "+10000000000",
+  "address_line1": "1 Example Street",
+  "address_line2": "Apartment 2",
+  "city": "Example City",
+  "state": "Example State",
+  "country": "Example Country",
+  "postal_code": "12345"
+}
+```
+
+`address_line2` is typed as nullable but has no default in the current schema, so include the property; use a string or `null`. The other listed address fields are required.
+
+## 5. Endpoint reference
+
+`Auth` means the bearer header described above is required. `Admin` means the authenticated user must have role `admin`.
+
+### Accounts and authentication
+
+| Method and path | Access | Request | Current result |
+|---|---|---|---|
+| `POST /signup` | Public | `SignUp` JSON | `200`: success message and new user `id`. Password and confirmation must match. |
+| `POST /login` | Public | `Login` JSON | `200`: `{ "message": "...", "token": "..." }`. |
+| `POST /token` | Public | Form URL-encoded `username=<email>&password=<password>` | `200`: `{ "access_token": "...", "token_type": "bearer" }`. |
+| `GET /me` | Auth | None | `200`: current user's `userId`, `name`, `email`, and `role`. |
+| `GET /admin/dashboard` | Admin | None | `200`: same user summary; non-admin users receive `403`. |
+| `POST /forgetpassword` | Public | `{ "email": "..." }` | `200`: returns a reset token. |
+| `POST /resetpassword` | Public; token is in body | `{ "token": "...", "new_password": "...", "confirm_password": "..." }` | `200`: success message if the token is valid and passwords match. |
+
+Example sign-in using the JSON endpoint:
+
+```http
+POST /login
+Content-Type: application/json
+```
+
+```json
+{
+  "email": "taylor@example.com",
+  "password": "example-password"
+}
+```
+
+Example protected request:
+
+```http
+GET /me
+Authorization: Bearer <token>
+```
+
+### Products
+
+| Method and path | Access | Request | Current result |
+|---|---|---|---|
+| `GET /products` | Public | None | `200`: array of products. |
+| `GET /product/{id}` | Public | Path appears to be a product ID | Intended to return matching product(s). **Current handler parameter does not match the `{id}` path name; verify/fix before using.** |
+| `GET /Product/{name}` | Public | Path appears to be product name | Intended to return one product. **Current handler parameter does not match the `{name}` path name, and this path has an uppercase `P`; verify/fix before using.** |
+| `POST /product` | Admin | Product JSON (all product fields except `id`) | `200`: created product. |
+| `PUT /product/{product_id}` | Admin | Product JSON | `200`: updated product. Current implementation updates only `name` and `price`; submitted `stock` and `description` are not applied. |
+| `DELETE /product/{product_id}` | Admin | None | `200`: deleted product response. |
+
+The reliable public catalogue endpoint at present is `GET /products`. The product lookup routes should be checked against the deployed OpenAPI document before the frontend depends on them.
+
+### Cart
+
+| Method and path | Access | Request | Current result |
+|---|---|---|---|
+| `POST /cart` | Auth | `{ "product_id": 1, "qty": 2 }` | Adds the requested quantity, or adds it to an existing cart line for that user/product. Checks requested quantity against available stock. |
+| `GET /cart` | Auth | None | `200`: current user's cart lines, each in `CartResponse` shape. An empty cart currently returns `404`, not an empty array. |
+| `GET /carts` | Admin | None | Returns cart records across users. |
+| `PUT /cart?id=<cart-line-id>` | Auth | `CartItem` JSON | Updates the matching user's cart line quantity using `qty`; `product_id` is still required by the request schema but is not used to select the line. |
+| `DELETE /cart/product/{product_id}` | Auth | None | Deletes the current user's line for that product. |
+| `DELETE /cart` | Auth | None | Current implementation deletes only the first cart row it finds, despite the path suggesting it clears the whole cart. |
+
+The backend does not currently define a dedicated “set quantity” payload without `product_id`; send the `CartItem` shape for `PUT /cart` until the API is changed.
+
+### Checkout and payment
+
+| Method and path | Access | Request | Current result |
+|---|---|---|---|
+| `POST /order` | Auth | Shipping-address JSON | Creates order rows for items in the user's cart and returns Paystack checkout information. |
+
+On success, the response is:
+
+```json
+{
+  "message": "Payment Initialized successful",
+  "authorization_url": "https://checkout.paystack.com/...",
+  "payment_reference": "...",
+  "total_amount": 51.0
+}
+```
+
+The frontend should redirect the customer to `authorization_url`. Treat this response as **payment initialization only**: the code shown does not verify payment completion, expose an order-history/status endpoint, decrement product stock, or clear the cart. Do not display an order as paid based only on this response. A server-side verification/callback flow is needed to confirm payment.
+
+## 6. Error handling
+
+Use the HTTP status and FastAPI's `detail` field to show an appropriate message. Common current responses include:
+
+| Status | Meaning in this API |
+|---|---|
+| `400` | Password confirmation mismatch on reset, or requested cart quantity exceeds available stock. |
+| `401` | Invalid/expired bearer or reset token; password mismatch during signup; or incorrect password. |
+| `403` | A non-admin account tried an admin-only operation. |
+| `404` | Account, product, or cart entry was not found; an empty cart currently also returns this. |
+| `409` | Signup duplicate check detected an existing account. |
+| `422` | Request JSON/form data failed Pydantic validation, such as missing or incorrectly typed fields. |
+| `500` | Possible for database uniqueness conflicts not caught by the current signup duplicate check, or unexpected server/payment failures. |
+
+For robust UI behavior, handle network failures and non-JSON error responses as well as JSON `{ "detail": "..." }`.
+
+## 7. Frontend workflows
+
+### Sign up and sign in
+
+1. Collect the exact fields required by `SignUp`, including `confirm_password`.
+2. On success, the signup response contains a user `id`; it does not include an access token.
+3. Sign in using `POST /login` (JSON) or `POST /token` (form URL-encoded).
+4. Normalize the two different token response field names in the frontend API client.
+5. Send the normalized token as `Authorization: Bearer <token>` for protected requests.
+6. Call `GET /me` to initialize the authenticated user's profile and role-dependent UI.
+
+### Catalogue and admin product management
+
+Load products from `GET /products`. Show admin-only controls only after confirming the user's role, but always rely on the API's authorization response as the security boundary. The backend currently permits product creation/deletion and partial updates only for admins.
+
+### Cart and checkout
+
+Load the cart from `GET /cart`; treat `404` as empty for the current implementation. Add items using `POST /cart`; when changing a line, preserve its cart-line `id` for the `id` query parameter expected by `PUT /cart`. Before checkout, submit the shipping address to `POST /order`, then redirect to the returned Paystack authorization URL. Because there is no payment verification endpoint, provide a pending/confirmation state and do not infer payment success from the redirect alone.
+
+## 8. Current API caveats to account for
+
+These behaviors are present in the inspected code and should be agreed with the backend owner before production UI depends on them:
+
+1. **Product lookup parameter mismatch:** handler argument names do not match `{id}` and `{name}` in the declared paths. The name lookup path also uses uppercase `/Product/`.
+2. **Signup duplicate check:** it checks for a user whose email **and** username both match the submitted pair. The database enforces each as unique independently, so a duplicate of only one field may become an unhandled database error rather than the documented `409`.
+3. **Login response mismatch:** `/login` returns `token`; `/token` returns `access_token`.
+4. **Password reset:** `/forgetpassword` returns a token directly (under the misspelled property `toekn`) instead of sending an email; no rate limiting or separate reset-token purpose is visible in the implementation.
+5. **Cart deletion:** `DELETE /cart` removes one row, not all rows.
+6. **Cart updates:** `PUT /cart` does not check product stock or validate a positive quantity; it requires `product_id` even though it updates by the `id` query parameter.
+7. **Checkout lifecycle:** checkout creates order rows and initializes payment, but no route verifies Paystack payment, updates order status, clears the cart, or updates inventory.
+8. **Cross-origin browser calls:** CORS middleware is not configured in the app; configure the deployed frontend origin on the backend if the frontend and API use different origins.
+
+## 9. Environment and deployment notes
+
+The backend reads these environment variables; configure them in the deployment platform, not in frontend code:
+
+| Variable | Used for |
+|---|---|
+| `DATABASE_URL` | SQLAlchemy database connection. |
+| `SECRET_KEY` | Signing and validating API JWTs. Keep private and use a strong random value. |
+| `ALGORITHM` | JWT signing algorithm; defaults to `HS256`. |
+| `PAYSTACK_API_KEY` | Server-side Paystack API authorization. Never expose this to the browser. |
+
+The repository uses `requirements.txt` for Python dependencies and Alembic for migrations. The frontend should not connect directly to the database or call Paystack with the secret API key; it should use the API and the returned hosted authorization URL.
+
+## 10. Suggested API client outline
+
+The following is illustrative TypeScript; adapt the base URL and error handling to the frontend stack:
+
+```ts
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+  accessToken?: string,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    const message = errorBody?.detail ?? `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<T>;
+}
+```
+
+For `POST /token`, use `URLSearchParams` with `Content-Type: application/x-www-form-urlencoded`; do not send its form fields as JSON. This outline is not a substitute for handling empty responses, expired tokens, payment redirects, and the API caveats described above.
