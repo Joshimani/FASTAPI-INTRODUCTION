@@ -9,5 +9,5 @@ alembic
 paybridge
 httpx 
 python-dotenv
-psycopg
+psycopg-binary
 python-multipart 
