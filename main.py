@@ -12,17 +12,19 @@ app = FastAPI()
 
 @app.post("/signup")
 def register(request: SignUp, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == request.email, User.username == request.username).first():
-        raise HTTPException( #change return to raise
+    if db.query(User).filter(
+        (User.email == request.email) | (User.username == request.username)
+    ).first():
+        raise HTTPException(
             status_code=409,
             detail="Email or username already exist"
 
         )
+
     if request.password != request.confirm_password:
         raise HTTPException(
             status_code=401,
-            detail="Password do no match"
-
+            detail="Password does not match"
         )
     password = hash_password(request.password)
 
